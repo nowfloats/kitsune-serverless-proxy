@@ -196,7 +196,7 @@ const staticRequestHandler = async request => {
       //using the s3 sdk
       var params = {
         Bucket: process.env.STORAGE_BUCKET_NAME,
-        Key: generateS3Key(s3Request, includeQueryParams)
+        Key: generateS3Key(request, includeQueryParams)
       };
       let compressionHeader = (request.headers['x-compression'] || '').trim().toUpperCase();
       let s3Response = null;

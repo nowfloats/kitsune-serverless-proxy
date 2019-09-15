@@ -53,7 +53,26 @@ const invokeProxy = async request => {
       console.log(JSON.stringify(newProxyRequest));
     }
 
-   
+    if(debugMode){
+      console.log("Original Proxy Request Headers");
+      console.log(newProxyRequest.headers);
+    }
+    if(!newProxyRequest.headers['user-agent']){
+      newProxyRequest.headers['user-agent'] = "kit-proxy 0.2";
+    }
+    if(!newProxyRequest.headers['accept-encoding']){
+      newProxyRequest.headers['accept-encoding'] = "gzip, defalate";
+    }
+    if(!newProxyRequest.headers['host']){
+      newProxyRequest.headers['host'] = 'kit-serverless-proxy.com';
+    }
+    if(!newProxyRequest.headers['accept']){
+      newProxyRequest.headers['accept'] = '*/*';
+    }
+    if(debugMode){
+      console.log("Updated Proxy Request");
+      console.log(newProxyRequest);
+    }
 
     var proxyResponse = await axios.request(newProxyRequest);
     if(debugMode){
