@@ -56,7 +56,7 @@ exports.handler = async request => {
         //Don't cache in asset storage if the overrideNoCacheHeaders is set and cache-control is no-cache from origin
         if (overrideNoCacheHeaders){
           if(!originResponse.headers || 
-            !(originResponse.headers["cache-control"] && originResponse.headers["cache-control"].toLowerCase() == "no-cache")){
+            (originResponse.headers["cache-control"] && originResponse.headers["cache-control"].toLowerCase() == "no-cache")){
               cacheInStorage = false;
           }
         } 
@@ -147,47 +147,56 @@ const s3Put = async params => {
   });
 }
 const s3Get = async (params, encoding) => {
-
+  let s3params = Object.assign({}, params); 
+  
   if(encoding){
-    params.Key = `${encoding}/${params.Key}`
+    s3params.Key = `${encoding}/${params.Key}`
   }
   var s3 = new AWS.S3();
   return await new Promise(function (resolve, reject) {
-    s3.getObject(params, function (err, data) {
-      if (err) {
-        if (debugMode) {
-          console.log("S3 Key not found: " + params.Key);
-          console.log(err.message); // an error occurred
-        }
-        resolve(null);
-      } else {
-        var cacheControlString = "";
-        if (data.ContentType && /html/i.test(data.ContentType)) {
-          //set html cache time as 24 hours
-          cacheControlString = 'public, max-age=86400';
+    try{
+      s3.getObject(s3params, function (err, data) {
+        if (err) {
+          if (debugMode) {
+            console.log("S3 Key not found: " + s3params.Key);
+            console.log(err.message); // an error occurred
+          }
+          resolve(null);
         } else {
-          //set other asset type cache time as 1 year
-          cacheControlString = 'public, max-age=31536000';
+          var cacheControlString = "";
+          if (data.ContentType && /html/i.test(data.ContentType)) {
+            //set html cache time as 24 hours
+            cacheControlString = 'public, max-age=86400';
+          } else {
+            //set other asset type cache time as 1 year
+            cacheControlString = 'public, max-age=31536000';
+          }
+          
+          var response = {
+            headers: {
+              'content-type': data.ContentType,
+              'content-length': data.ContentLength,
+              'cache-control': cacheControlString,
+              'x-powered-by': "kitsune runtime 0.2",
+              'x-kit-source': "Kitsune asset storage"
+            },
+            body: data.Body,
+            status: 200,
+            statusDescription: "OK"
+          }
+          if(data.ContentEncoding){
+            response.headers['content-encoding'] = data.ContentEncoding;
+          }
+          resolve(response);
         }
-        
-        var response = {
-          headers: {
-            'content-type': data.ContentType,
-            'content-length': data.ContentLength,
-            'cache-control': cacheControlString,
-            'x-powered-by': "kitsune runtime 0.2",
-            'x-kit-source': "Kitsune asset storage"
-          },
-          body: data.Body,
-          status: 200,
-          statusDescription: "OK"
-        }
-        if(data.ContentEncoding){
-          response.headers['content-encoding'] = data.ContentEncoding;
-        }
-        resolve(response);
-      }
-    });
+      });
+    }catch(ex){
+      if(debugMode){
+        console.log(`[Error] Get S3 with encoding ${encoding}, for request : ${JSON.stringify(params)} : Error : ${ex.message}`);
+      } 
+      resolve(null);
+    }
+    
   });
 }
 const staticRequestHandler = async request => {

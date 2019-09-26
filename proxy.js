@@ -75,10 +75,6 @@ const invokeProxy = async request => {
     }
 
     var proxyResponse = await axios.request(newProxyRequest);
-    if(debugMode){
-      console.log("Proxy Response Headers");
-      console.log(JSON.stringify(proxyResponse.headers));
-    }
 
     let headersFromOrigin = proxyResponse.headers;
 
