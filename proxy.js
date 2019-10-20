@@ -1,9 +1,7 @@
 require("dotenv").config();
-const https = require("https");
 const axios = require("axios");
 let debugMode = (process.env.DEBUG_MODE === "true");
 const traceMode = (process.env.TRACE_MODE === "true");
-const bypassSSLValidaiton = (process.env.BYPASS_SSL_VALIDATION === "true");
 
 const originRequestTimeout = (process.env.ORIGIN_REQUEST_TIMEOUT_SECONDS && !isNaN(parseInt(process.env.ORIGIN_REQUEST_TIMEOUT_SECONDS)) 
                               ? parseInt(process.env.ORIGIN_REQUEST_TIMEOUT_SECONDS) 
@@ -32,9 +30,6 @@ const invokeProxy = async request => {
   //to debug in local
   handleLocalHostRequests(request);
 
-  const agent = new https.Agent({  
-    rejectUnauthorized: !bypassSSLValidaiton
-  });
   var newProxyRequest = {
     url: request.path,
     method: request.method,
@@ -45,13 +40,8 @@ const invokeProxy = async request => {
     data: request.body,
     validateStatus: undefined, // resolve  for all response codes
     maxRedirects: 0, // Pass the redirect response to browser, do not handle it in middleware
-    responseType: 'arraybuffer',
-    httpsAgent: agent
+    responseType: 'arraybuffer'
   };
-
-  if(process.env.OVERRIDE_ORIGIN_HOST_HEADERS === "true"){
-    newProxyRequest.headers["host"]= process.env.TARGET_PROXY_DOMAIN;
-  }
 
   if (request.querystring && request.querystring !== "") {
     newProxyRequest.url += `?${request.querystring}`;
