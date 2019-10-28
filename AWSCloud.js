@@ -13,6 +13,8 @@ class AWSCloud extends Cloud {
         super(option);
         AWS.config.region = option && option.region ? option.region : "ap-south-1";
     }
+
+    //Storage
     async storageGet(params, encoding){
         let s3params = Object.assign({}, params); 
         
@@ -243,6 +245,9 @@ class AWSCloud extends Cloud {
         
         return s3Keys;
     }
+
+
+    //CDN
     async invalidateCDNCache(itemsToBeInvalidated){
         if(itemsToBeInvalidated && Array.isArray(itemsToBeInvalidated) && itemsToBeInvalidated.length > 0){
             
