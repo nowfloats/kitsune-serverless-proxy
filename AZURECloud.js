@@ -7,11 +7,13 @@ const storage = require('azure-storage');
 const debugMode = (process.env.DEBUG_MODE === "true");
 const traceMode = (process.env.TRACE_MODE === "true");
 
-const blobService = storage.createBlobService();
+
 
 class AZURECloud extends Cloud {
     constructor(creds, region){
         super(creds, region);
+        this.blobService = storage.createBlobService();
+
     }
     async storageGet(params, encoding){
         try{
@@ -30,7 +32,7 @@ class AZURECloud extends Cloud {
            
             //Returns blob http response wihout body
             var blobResult = await new Promise((resolve, reject) => {
-                blobService.getBlobToStream(storageparams.Bucket, storageparams.Key, stream, function(error, result, httpResponse){
+                this.blobService.getBlobToStream(storageparams.Bucket, storageparams.Key, stream, function(error, result, httpResponse){
                     
                         if (error) {
                             if(traceMode){
@@ -92,7 +94,7 @@ class AZURECloud extends Cloud {
     async storagePut(params){
         try{
             var blobUploadResult = await new Promise((resolve, reject) => {
-                blobService.createBlockBlobFromText(params.Bucket, params.Key, params.Body, {
+                this.blobService.createBlockBlobFromText(params.Bucket, params.Key, params.Body, {
                     contentSettings: {
                         contentType: params.ContentType,
                         contentEncoding: params.ContentEncoding
