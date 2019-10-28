@@ -3,12 +3,13 @@ require("dotenv").config();
 const requestChecker = require("./requestChecker.js");
 const waf = require("./waf.js");
 const compressionHelper = require('./compressionHelper.js');
+const cloudFactory = require("./cloudFactory");
 let proxyHelper = require("./proxyHelper.js");
 let countryValidation = require("./countryValidation.js");
 
 //TODO : update based on cloud provider
-const AWS = require("aws-sdk");
-AWS.config.region = "ap-south-1";
+const cloudHelper = new cloudFactory(process.env.CLOUD_PROVIDER, {region : process.env.CLOUD_REGION});
+
 
 const debugMode = (process.env.DEBUG_MODE === "true");
 const traceMode = (process.env.TRACE_MODE === "true");
@@ -37,12 +38,12 @@ exports.handler = async request => {
     return await proxyHelper.processRequest(request, !isOriginRequest);
   }
   else {
-    //process request from S3
+    //process request from Storage
     request.path = request.path.replace(/\/\//g, "\/"); //Replaec // in url to /
 
     var staticResponse = await staticRequestHandler(request);
     
-    //if error from S3, then try it from origin
+    //if error from storage, then try it from origin
     //   if the request fails at origin then return error
     if (!staticResponse || staticResponse.status > 299) {
       if(debugMode) console.log("[Warning] Static response not found : " + request.path);
@@ -61,9 +62,9 @@ exports.handler = async request => {
           }
         } 
         if(cacheInStorage){
-          await putObjectToS3(
+          await putObjectToStorage(
             process.env.STORAGE_BUCKET_NAME,
-            generateS3Key(request, includeQueryParams),
+            generateStorageKey(request, includeQueryParams),
             originResponse.body,
             originResponse.headers["content-type"]
           );
@@ -77,7 +78,7 @@ exports.handler = async request => {
     }
   }
 };
-async function  putObjectToS3(bucket, key, data, contentType, expiryDate) {
+async function  putObjectToStorage(bucket, key, data, contentType, expiryDate) {
   try{
    
     if(!expiryDate){
@@ -94,7 +95,7 @@ async function  putObjectToS3(bucket, key, data, contentType, expiryDate) {
       ContentType: contentType,
       Expires: expiryDate
     };
-    var res = await s3Put(params);
+    var res = await cloudHelper.storagePut(params);
     
     let gzData = await compressionHelper.compressGZ(data);
     //if gzip compressed
@@ -103,7 +104,7 @@ async function  putObjectToS3(bucket, key, data, contentType, expiryDate) {
       gzParams.Body = gzData;
       gzParams.ContentEncoding = 'gzip';
       gzParams.Key = 'gzip/' + params.Key;
-      await s3Put(gzParams);
+      await cloudHelper.storagePut(gzParams);
     }
     else{
       console.log(`[ERROR] Unable to compress 'gzip' : ${params.Key}`);
@@ -116,121 +117,52 @@ async function  putObjectToS3(bucket, key, data, contentType, expiryDate) {
       brParams.Body = brData;
       brParams.ContentEncoding = 'br';
       brParams.Key = 'br/' + params.Key;
-      await s3Put(brParams);
+      await cloudHelper.storagePut(brParams);
     }else{
       console.log(`[ERROR] Unable to compress 'br' : ${params.Key}`);
     }
 
    
   }catch(e){
-    console.log("[Error] : Put Object to S3 : ");
+    console.log("[Error] : Put Object to Storage : ");
     console.log(e);
     return null;
   }
   
 }
-const s3Put = async params => {
-  var s3 = new AWS.S3();
-  return await new Promise(function (resolve, reject) {
-    s3.putObject(params, function (err, data) {
-      if (err) {
-        console.log(err, err.stack); // an error occurred
-        reject(false);
-      } else {
-        if (debugMode) {
-          console.log("S3 upload success" + bucket + ":" + key);
-          console.log(data); // successful response
-        }
-        resolve(true);
-      }
-    });
-  });
-}
-const s3Get = async (params, encoding) => {
-  let s3params = Object.assign({}, params); 
-  
-  if(encoding){
-    s3params.Key = `${encoding}/${params.Key}`
-  }
-  var s3 = new AWS.S3();
-  return await new Promise(function (resolve, reject) {
-    try{
-      s3.getObject(s3params, function (err, data) {
-        if (err) {
-          if (debugMode) {
-            console.log("S3 Key not found: " + s3params.Key);
-            console.log(err.message); // an error occurred
-          }
-          resolve(null);
-        } else {
-          var cacheControlString = "";
-          if (data.ContentType && /html/i.test(data.ContentType)) {
-            //set html cache time as 24 hours
-            cacheControlString = 'public, max-age=86400';
-          } else {
-            //set other asset type cache time as 1 year
-            cacheControlString = 'public, max-age=31536000';
-          }
-          
-          var response = {
-            headers: {
-              'content-type': data.ContentType,
-              'content-length': data.ContentLength,
-              'cache-control': cacheControlString,
-              'x-powered-by': "kitsune runtime 0.2",
-              'x-kit-source': "Kitsune asset storage"
-            },
-            body: data.Body,
-            status: 200,
-            statusDescription: "OK"
-          }
-          if(data.ContentEncoding){
-            response.headers['content-encoding'] = data.ContentEncoding;
-          }
-          resolve(response);
-        }
-      });
-    }catch(ex){
-      if(debugMode){
-        console.log(`[Error] Get S3 with encoding ${encoding}, for request : ${JSON.stringify(params)} : Error : ${ex.message}`);
-      } 
-      resolve(null);
-    }
-    
-  });
-}
+
 const staticRequestHandler = async request => {
  
     try {
-      //using the s3 sdk
+      //using the storage
       var params = {
         Bucket: process.env.STORAGE_BUCKET_NAME,
-        Key: generateS3Key(request, includeQueryParams)
+        Key: generateStorageKey(request, includeQueryParams)
       };
       let compressionHeader = (request.headers['x-compression'] || '').trim().toUpperCase();
-      let s3Response = null;
+      let storageResponse = null;
       switch(compressionHeader){
         case 'BR' : 
-          s3Response =  await s3Get(params, 'br');
-          if(!s3Response){
-            s3Response = await s3Get(params, 'gzip');
+          storageResponse =  await cloudHelper.storageGet(params, 'br');
+          if(!storageResponse){
+            storageResponse = await cloudHelper.storageGet(params, 'gzip');
           }
-          if(!s3Response){
-            s3Response = await s3Get(params);
+          if(!storageResponse){
+            storageResponse = await cloudHelper.storageGet(params);
           }
-          return s3Response;
+          return storageResponse;
         break;
 
         case 'GZIP' : 
-          s3Response =  await s3Get(params, 'gzip');
-          if(!s3Response){
-            s3Response = await s3Get(params);
+          storageResponse =  await cloudHelper.storageGet(params, 'gzip');
+          if(!storageResponse){
+            storageResponse = await cloudHelper.storageGet(params);
           }
-          return s3Response;
+          return storageResponse;
         break;
 
         default : 
-          return await s3Get(params);
+          return await cloudHelper.storageGet(params);
       }
     } catch (error) {
       console.log("Static Response Error: ");
@@ -241,19 +173,19 @@ const staticRequestHandler = async request => {
         return null;
     }
 };
-function generateS3Key(request, includeQueryParams){
+function generateStorageKey(request, includeQueryParams){
   
-  let s3Key = request.path;
-  if (!ltrim(s3Key, "/")) {
-    s3Key = "/index.html";
+  let storageKey = request.path;
+  if (!ltrim(storageKey, "/")) {
+    storageKey = "/index.html";
   }
-  s3Key = ltrim(s3Key, "/");
+  storageKey = ltrim(storageKey, "/");
 
   if(includeQueryParams && request.querystring){
     let encodedQueryString = (new Buffer(request.querystring)).toString('base64');
-    s3Key = s3Key + "?" + encodedQueryString;
+    storageKey = storageKey + "?" + encodedQueryString;
   }
-  return s3Key;
+  return storageKey;
 }
 function ltrim(str, chars) {
   chars = chars || "\s";
