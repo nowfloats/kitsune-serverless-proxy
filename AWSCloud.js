@@ -1,4 +1,4 @@
-require("dotenv").config();
+var config = require("dotenv").config();
 
 const Cloud = require('./Cloud');
 const AWS = require("aws-sdk");
@@ -12,6 +12,8 @@ class AWSCloud extends Cloud {
     constructor(option){
         super(option);
         AWS.config.region = option && option.region ? option.region : "ap-south-1";
+        AWS.config.accessKeyId = config.parsed.AWS_ACCESS_KEY_ID;
+        AWS.config.secretAccessKey = config.parsed.AWS_SECRET_ACCESS_KEY;
     }
 
     //Storage
